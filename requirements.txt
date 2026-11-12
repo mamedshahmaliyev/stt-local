@@ -1,0 +1,8 @@
+parakeet-mlx>=0.3
+silero-vad>=5.1
+torch
+sounddevice
+soundfile
+numpy
+PySide6>=6.6
+pyobjc-framework-Cocoa
