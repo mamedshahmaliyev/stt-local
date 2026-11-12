@@ -8,6 +8,12 @@ To also get a floating, half-transparent popup that stays on top of other window
 - **Sentence splitting:** Silero VAD (~2 MB)
 - **Saved transcripts:** every session is also written to `~/.voice_stt/transcripts/`
 
+## Requirements: Mac with Apple Silicon (MLX)
+
+This project is built for **macOS on Apple Silicon (M1 or newer)**. Speech recognition runs on [MLX](https://github.com/ml-explore/mlx), Apple's machine-learning framework, through `parakeet-mlx`. MLX already uses the Mac's built-in GPU (via Metal) by default, so there is nothing to switch on.
+
+It will **not** run as-is on Intel Macs, Linux or Windows, because MLX only supports Apple Silicon. To run it elsewhere with an NVIDIA GPU, see [Running on an NVIDIA GPU (Linux/Windows)](#running-on-an-nvidia-gpu-linuxwindows).
+
 ## Install (once)
 
 ```bash
@@ -68,6 +74,55 @@ Taps must be quick, with less than half a second between them. These work in any
 | `--no-tui` | No terminal controls; just print the text |
 | `--no-hotkeys` | Turn off the global tap hotkeys |
 | `--font-size 18` | Popup: use bigger text |
+
+## Running on an NVIDIA GPU (Linux/Windows)
+
+The same Parakeet models are published by NVIDIA for its **NeMo** toolkit, which runs on CUDA GPUs. To switch from MLX to NeMo:
+
+**1. Install PyTorch with CUDA, then NeMo**, in place of the Mac-only packages:
+
+```bash
+uv venv --python 3.12 .venv
+# PyTorch build for your CUDA version (see https://pytorch.org/get-started/locally/)
+uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cu124
+uv pip install --python .venv/bin/python "nemo_toolkit[asr]" silero-vad sounddevice soundfile numpy PySide6
+```
+
+Leave out `parakeet-mlx` and `pyobjc-framework-Cocoa`; they only install on macOS.
+
+**2. Change the model loader** in `voice_stt.py` (`_load`):
+
+```python
+# before (MLX)
+from parakeet_mlx import from_pretrained
+self.asr = from_pretrained(self.args.model)
+
+# after (NeMo, uses the GPU automatically when CUDA is available)
+import nemo.collections.asr as nemo_asr
+self.asr = nemo_asr.models.ASRModel.from_pretrained(self.args.model).eval()
+```
+
+**3. Change the transcribe call** in `_transcribe`:
+
+```python
+# before (MLX)
+text = self.asr.transcribe(tmp).text.strip()
+
+# after (NeMo returns a list; newer versions return objects with .text)
+out = self.asr.transcribe([tmp])[0]
+text = (out.text if hasattr(out, "text") else out).strip()
+```
+
+**4. Use the NVIDIA model names**, either by changing `DEFAULT_MODEL` or by passing `--model`:
+
+| MLX (Mac) | NeMo (NVIDIA GPU) |
+|---|---|
+| `mlx-community/parakeet-tdt_ctc-110m` | `nvidia/parakeet-tdt_ctc-110m` |
+| `mlx-community/parakeet-tdt-0.6b-v2` | `nvidia/parakeet-tdt-0.6b-v2` |
+
+**5. Run with `--no-hotkeys`.** The global tap hotkeys, pinning the popup to every Space and minimizing to the Dock all use macOS APIs. Without macOS they turn themselves off and print a note, and everything else works.
+
+To check that the GPU is being used, run `python -c "import torch; print(torch.cuda.is_available())"`. It should print `True`. If it prints `False`, NeMo falls back to the CPU, which is much slower.
 
 ## Troubleshooting
 
